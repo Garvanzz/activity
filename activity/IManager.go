@@ -25,7 +25,7 @@ const (
 	ConsumePD
 )
 
-type ActMgr interface {
+type Manager interface {
 	Create() bool //创建
 	Stop() bool   //停止
 

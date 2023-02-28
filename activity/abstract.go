@@ -1,21 +1,27 @@
 package activity
 
-type IActivity interface {
-	OnDayReset()
-	OnInit()
+import (
+	"time"
+
+	"google.golang.org/protobuf/proto"
+)
+
+// player impl
+type IPlayer interface {
 }
 
-
 type IActivity interface {
-	OnInit()                                                                // 加载活动数据 初始化数据结构
-	OnStart()                                                               // 活动开启 只执行一次
-	OnClose()                                                               // 活动结束 清除活动数据
-	OnSave()                                                                // 保存活动数据
-	OnEvent(key string, obj global.IPlayer, content map[string]interface{}) // 活动事件
-	Update(time.Time, int64)                                                // 活动tick
+	OnInit()
+	OnStart()
+	OnClose()
+	OnSave()
+	OnEvent(key string, obj IPlayer, content map[string]interface{})
+	Update(time.Time, int64)
 
-	GetAward(obj global.IPlayer, index int32)
-	Format(obj global.IPlayer) proto.Message
+	GetAward(obj IPlayer, index int32)
+	Format(obj IPlayer) proto.Message
+
+	OnDayReset()
 
 	SetActId(id int32)
 	SetActType(t string)
@@ -40,13 +46,13 @@ func (act *DefActivity) OnClose() {}
 
 func (act *DefActivity) OnSave() {}
 
-func (act *DefActivity) OnEvent(key string, obj global.IPlayer, content map[string]interface{}) {}
+func (act *DefActivity) OnEvent(key string, obj IPlayer, content map[string]interface{}) {}
 
 func (act *DefActivity) Update(now time.Time, elspNanoSecond int64) {}
 
-func (act *DefActivity) GetAward(obj global.IPlayer, index int32) {}
+func (act *DefActivity) GetAward(obj IPlayer, index int32) {}
 
-func (act *DefActivity) Format(obj global.IPlayer) proto.Message { return nil }
+func (act *DefActivity) Format(obj IPlayer) proto.Message { return nil }
 
 func (act *DefActivity) SetActId(id int32) { act.ActId = id }
 
