@@ -7,7 +7,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"qiniupkg.com/x/log.v7"
+	"activity/tools/log"
 )
 
 var (
