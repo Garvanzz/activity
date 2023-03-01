@@ -9,7 +9,7 @@ const (
 	ActivityType_Cousume     = "ConfConsume"     // 累计积分活动
 	ActivityType_PveWarOrder = "ConfPveOrder"    // Pve战令
 	ActivityType_PvpWarOrder = "ConfPvpOrder"    // Pvp战令
-	ActivityType_GrowGift    = "ConfGrowGift"    //成长礼包
+	ActivityType_GrowGift    = "ConfGrowGift"    // 成长礼包
 	ActivityType_CdKey       = "ConfCdkeyGift"   // CdKey活动
 	ActivityType_Task        = "ConfLiveness"    // 活跃活动
 )
@@ -25,7 +25,14 @@ const (
 	ConsumePD
 )
 
-type Manager interface {
+// 配置表时间类型
+const (
+	ActTime_Close      = iota // 关闭活动
+	ActTime_AlwaysOpen        // 常驻活动
+	ActTime_CheckTime         // 配置表时间
+)
+
+type ActivityManager interface {
 	Create() bool //创建
 	Stop() bool   //停止
 
