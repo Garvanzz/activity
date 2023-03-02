@@ -1,4 +1,4 @@
-package activity
+package global
 
 const (
 	ActivityType_Newcomer    = "ConfPlayerGift"  // 新手礼包活动
@@ -14,30 +14,19 @@ const (
 	ActivityType_Task        = "ConfLiveness"    // 活跃活动
 )
 
-type PDType int32
 
-// 活动玩家数据类型
-const (
-	WarOrderPD PDType = iota + 1
-	TaskPD
-	GrowGiftPD
-	GiftPD
-	ConsumePD
-)
-
-// 配置表时间类型
-const (
-	ActTime_Close      = iota // 关闭活动
-	ActTime_AlwaysOpen        // 常驻活动
-	ActTime_CheckTime         // 配置表时间
-)
+type CEvent struct {
+	Obj     IPlayer
+	Type    int
+	Content interface{}
+}
 
 type ActivityManager interface {
 	Create() bool //创建
 	Stop() bool   //停止
 
-	OnEvent(event *event.CEvent) //事件回调
-	OnRet(ret *dbengine.CDBRet)  //db返回回调
+	OnEvent(event *CEvent) //事件回调
+	//OnRet(ret *dbengine.CDBRet)  //db返回回调
 
 	GetAward(obj IPlayer, actId int32, index int32) // 领取活动奖励
 	GetActivityData(activeId int32, obj IPlayer)    // 获取单个活动数据

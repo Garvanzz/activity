@@ -1,28 +1,24 @@
-package activity
+package logic
 
-func getActivityHandler(actType string) IActivity {
-	var handler IActivity
-	//switch actType {
-	//case ActivityType_Cousume, ActivityType_Recharge:
-	//	handler = new(ActivityConsume)
-	//case ActivityType_SpecialGift:
-	//	handler = new(ActivityGift)
-	//case ActivityType_GrowGift:
-	//	handler = new(ActivityGrowGift)
-	//case ActivityType_WarOrder, global.ActivityType_PveWarOrder, global.ActivityType_PvpWarOrder:
-	//	handler = new(ActivityWarOrder)
-	//case ActivityType_Newcomer:
-	//	handler = new(ActivityNewcomer)
-	//case ActivityType_Privilege:
-	//	handler = new(ActivityPrivilege)
-	//case ActivityType_CdKey:
-	//	handler = new(ActivityCdkey)
-	//case ActivityType_Task:
-	//	handler = new(ActivityTask)
-	//default:
-	//	log.Error("get activity handler err:activityType=%v", actType)
-	//}
-	return handler
+import (
+	"activity/global"
+	"activity/logic/impl"
+	"activity/tools/log"
+)
+
+func getActivityHandler(entity *Entity) (global.IActivity, bool) {
+	var handler global.IActivity
+	switch entity.Type {
+	case global.ActivityType_Cousume:
+		h := new(impl.ActivityConsume)
+		h.BaseInfo = entity
+		handler = h
+	default:
+		log.Error("unknown activity type:%v", entity.Type)
+		return nil, false
+	}
+
+	return handler, true
 }
 
 // func setProtoByType(actType string, msg *proto_activity.ResponseActivityData, data proto.Message) {

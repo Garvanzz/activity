@@ -2,7 +2,6 @@ package data
 
 import (
 	"activity/tools/log"
-	"encoding/json"
 	"fmt"
 	"github.com/gomodule/redigo/redis"
 	"time"
@@ -45,37 +44,24 @@ func Request(cmd string, args ...interface{}) {
 	}()
 }
 
-func loadData(id int32, bindObj interface{}) bool {
+func LoadData(id int32) string {
 	reply, err := RedisExec("GET", fmt.Sprintf("%s:%d", ActivityRedisKey, id))
 	if err != nil {
-		log.Error("")
-		return false
+		log.Error("load activity data from redis error:%v", err)
+		return ""
 	}
 
 	if reply == nil {
-		log.Error("")
-		return false
+		return ""
 	}
 
-	err = json.Unmarshal(reply.([]byte), bindObj)
-	if err != nil {
-		log.Error("")
-		return false
-	}
-
-	return true
+	return reply.(string)
 }
 
-func saveData(id int32, data interface{}) {
-	b, err := json.Marshal(data)
-	if err != nil {
-		log.Error("", err)
-		return
-	}
-
-	Request("SET", fmt.Sprintf("%s:%d", ActivityRedisKey, id), b)
+func SaveData(id int32, data string) {
+	Request("SET", fmt.Sprintf("%s:%d", ActivityRedisKey, id), data)
 }
 
-func delData(id int32) {
+func DelData(id int32) {
 	Request("DEL", fmt.Sprintf("%s:%d", ActivityRedisKey, id))
 }

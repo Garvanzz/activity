@@ -1,4 +1,4 @@
-package activity
+package logic
 
 import "activity/tools/fsm"
 
@@ -10,6 +10,7 @@ const (
 )
 
 const (
+	EventNone    = ""
 	EventStart   = "event_start"
 	EventStop    = "event_stop"
 	EventClose   = "event_close"
