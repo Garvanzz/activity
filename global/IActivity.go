@@ -19,6 +19,12 @@ const (
 	ActTime_CheckTime         // 配置表时间
 )
 
+const (
+	Event_Type_PlayerOnline = iota + 1
+	Event_Type_PlayerOffline
+	Event_Type_ActivityEvent
+)
+
 // player impl
 type IPlayer interface {
 	GetActivityData(id int32) interface{}

@@ -2,11 +2,12 @@ package logic
 
 import (
 	"activity/global"
+	"activity/logic/config"
 	"activity/logic/data"
 	"activity/tools/fsm"
 	"activity/tools/log"
+	"activity/tools/redis"
 	"encoding/json"
-	"errors"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -21,58 +22,59 @@ type Manager struct {
 	AutoId   int32
 	LastTick int64
 	sm       *fsm.StateMachine
-	lock     sync.RWMutex // 除了增添、删除活动 其他地方有无必要增加锁
+	lock     sync.RWMutex // TODO:除了增添、删除活动 其他地方有无必要增加锁
 }
 
-// 管理器生命周期函数
 func (m *Manager) Create() {
 	instance = new(Manager)
 	instance.Entitys = make(map[int32]*Entity)
 	instance.sm = fsm.NewStateMachine(&fsm.DefaultDelegate{P: instance}, transitions...)
 
-	// TODO:注册事件
-	var reply []byte
-	err := json.Unmarshal(reply, m)
+	reply, err := redis.RedisExec("GET", "activityMgr")
 	if err != nil {
-		log.Error("unmarshal activity manager data error:", err)
+		log.Error("load activity manager from redis error:%v", err)
 		return
 	}
 
-	// TODO:load activity
-	for _, entity := range m.Entitys {
-		if handler, ok := getActivityHandler(entity); !ok {
+	if reply != nil {
+		err := json.Unmarshal(reply.([]byte), m)
+		if err != nil {
+			log.Error("unmarshal activity manager data error:", err)
 			return
-		} else {
+		}
+	}
+
+	for _, entity := range m.Entitys {
+		if handler, ok := getActivityHandler(entity); ok {
 			entity.handler = handler
 
-			// load data
-			entity.load()
+			// 只有运行中的活动需要加载数据
+			if entity.State == StateRunning {
+				entity.load()
+			}
 
-			event := entity.checkNewCfg() // 检查配置表
+			event := entity.checkConfig()
 			if event != EventNone {
 				err := m.sm.Trigger(entity.State, event, entity)
 				if err != nil {
-					log.Error("")
+					log.Error("%v", err)
 					continue
 				}
 			}
-
 		}
 	}
 
 	// 加载配置中的新活动
-	actCfgs := cfg.ConfigMgr.GetCfg("ConfActivity").(map[int64]global.ConfActivityElement)
-	m := make(map[int64]int)
-	for _, entity := range mgr.actEntity {
-		m[entity.CfgId] = 1
+	confs := make(map[int64]config.ConfActivityElement, 0)
+
+	existIds := make(map[int32]int)
+	for _, entity := range m.Entitys {
+		existIds[entity.CfgId] = 1
 	}
-	for _, actCfg := range actCfgs {
-		_, ok := m[actCfg.ID]
-		if !ok {
-			err = mgr.Register(actCfg)
-			if err != nil {
-				log.Error("actMgr load new activity error:%v", err)
-			}
+
+	for _, conf := range confs {
+		if _, ok := existIds[conf.ID]; !ok {
+			m.register(conf.ID)
 		}
 	}
 
@@ -80,25 +82,39 @@ func (m *Manager) Create() {
 }
 
 func (m *Manager) Stop() {
-	// 事件管理器 注销
-
 	m.lock.Lock()
-	for _, entity := range m.entitys {
-		// TODO:统一处理活动数据
+	for _, entity := range m.Entitys {
+		d, err := entity.handler.Marshal()
+		if err != nil {
+			log.Error("")
+			continue
+		}
+
+		if d != "" {
+			data.SaveData(entity.Id, d)
+		}
 	}
 	m.lock.Unlock()
+
+	b, err := json.Marshal(m)
+	if err != nil {
+		log.Error("activity manager stop marshal error:%v", err)
+		return
+	}
+
+	redis.RedisExec("SET", "ActivityMgr", string(b))
 }
 
 func (m *Manager) Update(now time.Time, elspNanoSecond int64) {
 	m.lock.RLock()
 	defer m.lock.RUnlock()
 
-	for _, entity := range m.entitys {
-		if entity.State == StateClosed || entity.State == StateStopped {
+	for _, entity := range m.Entitys {
+		if entity.State == StateStopped {
 			continue
 		}
 
-		event := checkState(entity)
+		event := entity.checkState()
 		if event != EventNone {
 			err := m.sm.Trigger(entity.State, event, entity)
 			if err != nil {
@@ -113,17 +129,17 @@ func (m *Manager) Update(now time.Time, elspNanoSecond int64) {
 	}
 }
 
-// fms process
+// fsm process
 func (m *Manager) OnExit(fromState string, args []interface{}) {
-	e := args[0].(*entity)
+	e := args[0].(*Entity)
 	if e.State != fromState {
-		log.Error("")
+		log.Error("OnExit state error:%v,currentState:%v", fromState, e.State)
 		return
 	}
 }
 
 func (m *Manager) Action(action string, fromState string, toState string, args []interface{}) error {
-	e := args[0].(*entity)
+	e := args[0].(*Entity)
 
 	switch action {
 	case ActionStart: // waitting -> running
@@ -134,9 +150,21 @@ func (m *Manager) Action(action string, fromState string, toState string, args [
 
 		// clear data
 		data.DelData(e.Id)
-	case ActionStop: // do nothing
+	case ActionStop:
+		if fromState == StateRunning {
+			// save data
+		}
 	case ActionRecover: // stop -> running
-	case ActionRestart: // stop -> waitting
+		d := data.LoadData(e.Id)
+		if err := e.handler.UnMarshal(d); err != nil {
+			log.Error("")
+		}
+
+		e.handler.OnInit()
+
+	case ActionRestart: // closed -> waitting
+		// 分配新的id
+		e.Id = m.Id()
 	default:
 		log.Error("unprocessed action:%v", action)
 	}
@@ -148,12 +176,12 @@ func (m *Manager) OnActionFailure(action string, fromState string, toState strin
 }
 
 func (m *Manager) OnEnter(toState string, args []interface{}) {
-	e := args[0].(*entity)
+	e := args[0].(*Entity)
 	e.State = toState
 }
 
 func (m *Manager) Id() int32 {
-	return atomic.AddInt32(&m.autoId, 1)
+	return atomic.AddInt32(&m.AutoId, 1)
 }
 
 // 事件回调
@@ -167,10 +195,10 @@ func (m *Manager) OnEvent(event *global.CEvent) {
 	}
 
 	switch event.Type {
-	//case global.Event_Type_PlayerOnline:
-	//	mgr.notifyEvent(obj, map[string]interface{}{"key": "player_online"})
-	//case global.Event_Type_PlayerOffline:
-	case 1:
+	case global.Event_Type_PlayerOnline:
+		m.notify(event.Obj, map[string]interface{}{"key": "player_online"})
+	case global.Event_Type_PlayerOffline:
+	case global.Event_Type_ActivityEvent:
 		content, ok := event.Content.(map[string]interface{})
 		if !ok {
 			return
@@ -189,9 +217,7 @@ func (m *Manager) notify(obj global.IPlayer, content map[string]interface{}) {
 
 	eventKey, ok := key.(string)
 	if ok && eventKey != "" {
-		m.lock.RLock()
-		defer m.lock.RUnlock()
-		for _, entity := range m.entitys {
+		for _, entity := range m.Entitys {
 			if entity.isActive() {
 				entity.handler.OnEvent(eventKey, obj, content)
 			}
@@ -225,29 +251,23 @@ func (m *Manager) register(cfgId int32) {
 		endTime = parseTime.Unix()
 	}
 
-	e := new(entity)
-	handler := getActivityHandler(conf.Type)
-
-	if handler == nil {
-		log.Error("")
-		return
-	}
-
+	e := new(Entity)
 	e.Id = id
 	e.Type = conf.Type
 	e.CfgId = conf.ID
-	e.handler = handler
 	e.StartTime = startTime
 	e.EndTime = endTime
 	e.TimeType = conf.ActTime
 
-	//m.lock.Lock()
-	//m.entitys[id] = e
-	//m.lock.Unlock()
+	if handler, ok := getActivityHandler(e); ok {
+		e.handler = handler
+		m.Entitys[id] = e
+		return
+	}
 }
 
 // 检查配置表
-func (e *Entity) checkNewCfg() (event string) {
+func (e *Entity) checkConfig() (event string) {
 	event = EventNone
 
 	conf := GetConf(e.CfgId)
@@ -314,26 +334,30 @@ func (e *Entity) checkNewCfg() (event string) {
 	return
 }
 
-func checkState(e *Entity) (event string) {
+func (e *Entity) checkState() (event string) {
 	event = EventNone
 
+	// stop return
 	if e.State == StateStopped {
 		return
 	}
 
 	now := time.Now().Unix()
 
-	// check time
 	switch e.State {
 	case StateWaitting:
 		if now >= e.StartTime && now < e.EndTime {
 			event = EventStart
-		} else if now >= e.EndTime { // 如果活动刚开启就已经结束了 不操作
+		} else if now >= e.EndTime {
 			event = EventClose
 		}
 	case StateRunning:
 		if now > e.EndTime { // 活动正常结束
 			event = EventClose
+		}
+	case StateClosed:
+		if now >= e.StartTime && now < e.EndTime {
+			event = EventRestart
 		}
 	}
 

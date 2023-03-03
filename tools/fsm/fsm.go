@@ -1,9 +1,8 @@
 package fsm
 
-import "errors"
-
-var (
-	ErrSm = errors.New("stateMechine error")
+import (
+	"errors"
+	"fmt"
 )
 
 type Transition struct {
@@ -29,7 +28,8 @@ func NewStateMachine(delegate Delegate, transitions ...Transition) *StateMachine
 func (m *StateMachine) Trigger(currentState string, event string, args ...interface{}) error {
 	trans := m.findTransMatching(currentState, event)
 	if trans == nil {
-		return ErrSm
+		return errors.New(fmt.Sprintf("stateMechine trigger error,currentState:%s,event:%s", currentState, event))
+
 	}
 
 	var err error

@@ -3,13 +3,13 @@ package logic
 import "activity/tools/fsm"
 
 const (
+	// state
 	StateWaitting = "waitting"
 	StateRunning  = "running"
 	StateStopped  = "stopped"
 	StateClosed   = "closed"
-)
 
-const (
+	// event
 	EventNone    = ""
 	EventStart   = "event_start"
 	EventStop    = "event_stop"
@@ -17,7 +17,7 @@ const (
 	EventRecover = "event_recover"
 	EventRestart = "event_restart"
 
-	ActionNone    = ""
+	// action
 	ActionStart   = "action_start"
 	ActionClose   = "action_close"
 	ActionStop    = "action_stop"
@@ -35,7 +35,7 @@ var (
 		{StateRunning, EventClose, StateClosed, ActionClose},
 
 		{StateStopped, EventRecover, StateRunning, ActionRecover},
-		{StateStopped, EventClose, StateClosed, ActionStart},
+		{StateStopped, EventClose, StateClosed, ActionClose},
 
 		{StateClosed, EventRestart, StateWaitting, ActionRestart},
 	}

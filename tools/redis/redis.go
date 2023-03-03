@@ -1,14 +1,8 @@
-package data
+package redis
 
 import (
-	"activity/tools/log"
-	"fmt"
 	"github.com/gomodule/redigo/redis"
 	"time"
-)
-
-const (
-	ActivityRedisKey = "ACTIVITY"
 )
 
 var (
@@ -42,26 +36,4 @@ func Request(cmd string, args ...interface{}) {
 		defer conn.Close()
 		conn.Do(cmd, args...)
 	}()
-}
-
-func LoadData(id int32) string {
-	reply, err := RedisExec("GET", fmt.Sprintf("%s:%d", ActivityRedisKey, id))
-	if err != nil {
-		log.Error("load activity data from redis error:%v", err)
-		return ""
-	}
-
-	if reply == nil {
-		return ""
-	}
-
-	return reply.(string)
-}
-
-func SaveData(id int32, data string) {
-	Request("SET", fmt.Sprintf("%s:%d", ActivityRedisKey, id), data)
-}
-
-func DelData(id int32) {
-	Request("DEL", fmt.Sprintf("%s:%d", ActivityRedisKey, id))
 }
