@@ -17,12 +17,18 @@ var (
 	instance *Manager
 )
 
+var _ global.ActivityManager = &Manager{}
+
 type Manager struct {
 	Entitys  map[int32]*Entity
 	AutoId   int32
 	LastTick int64
 	sm       *fsm.StateMachine
 	lock     sync.RWMutex // TODO:除了增添、删除活动 其他地方有无必要增加锁
+}
+
+func GetInstance() global.ActivityManager {
+	return instance
 }
 
 func (m *Manager) Create() {
@@ -64,7 +70,7 @@ func (m *Manager) Create() {
 		}
 	}
 
-	// 加载配置中的新活动
+	// 根据配置加载新活动
 	confs := make(map[int64]config.ConfActivityElement, 0)
 
 	existIds := make(map[int32]int)
@@ -82,7 +88,7 @@ func (m *Manager) Create() {
 }
 
 func (m *Manager) Stop() {
-	m.lock.Lock()
+	//m.lock.Lock()
 	for _, entity := range m.Entitys {
 		d, err := entity.handler.Marshal()
 		if err != nil {
@@ -94,7 +100,7 @@ func (m *Manager) Stop() {
 			data.SaveData(entity.Id, d)
 		}
 	}
-	m.lock.Unlock()
+	//m.lock.Unlock()
 
 	b, err := json.Marshal(m)
 	if err != nil {
@@ -264,102 +270,4 @@ func (m *Manager) register(cfgId int32) {
 		m.Entitys[id] = e
 		return
 	}
-}
-
-// 检查配置表
-func (e *Entity) checkConfig() (event string) {
-	event = EventNone
-
-	conf := GetConf(e.CfgId)
-	if conf == nil {
-		log.Error("activity config error:%v", e.CfgId)
-		return
-	}
-
-	// set time type
-	e.TimeType = conf.ActTime
-
-	// 暂停状态不再检查配置
-	if e.State == StateStopped {
-		return
-	}
-
-	switch e.TimeType {
-	case global.ActTime_AlwaysOpen: // 常驻活动
-		if e.State == StateWaitting || e.State == StateClosed { // TODO: close 不能再被打开了 当成新活动处理
-			event = EventStart
-		}
-	case global.ActTime_CheckTime: // 检查活动配置表
-		startTime, err := time.ParseInLocation("2006-01-02 15:04:05", Trim(conf.StartTime), time.Local)
-		if err != nil {
-			log.Error("checkCfg parse startTime err:%v", err)
-			return
-		}
-
-		endTime, err := time.ParseInLocation("2006-01-02 15:04:05", Trim(conf.EndTime), time.Local)
-		if err != nil {
-			log.Error("checkCfg parse endTime err:%v", err)
-			return
-		}
-
-		if startTime.Unix() >= endTime.Unix() {
-			log.Error("checkCfg startTime>=endTime err")
-			return
-		}
-
-		now := time.Now().Unix()
-
-		e.StartTime = startTime.Unix()
-		e.EndTime = endTime.Unix()
-
-		if e.State == StateRunning {
-			if startTime.Unix() > now { // 如果新开始时间还没到就关闭活动 等待重新开启
-				event = EventClose
-			}
-		}
-		// TODO:closed 状态后续的处理
-		// closed 和 not_open走这里
-		//	act.StartTime = startTime
-		//	act.EndTime = endTime
-		//	act.Status = ActStatus_NotOpen
-		//}
-	case global.ActTime_Close: // 关闭活动
-		if e.State == StateRunning {
-			event = EventClose
-		}
-	default:
-		log.Error("checkCfg ActTime error:%v", conf.ActTime)
-	}
-
-	return
-}
-
-func (e *Entity) checkState() (event string) {
-	event = EventNone
-
-	// stop return
-	if e.State == StateStopped {
-		return
-	}
-
-	now := time.Now().Unix()
-
-	switch e.State {
-	case StateWaitting:
-		if now >= e.StartTime && now < e.EndTime {
-			event = EventStart
-		} else if now >= e.EndTime {
-			event = EventClose
-		}
-	case StateRunning:
-		if now > e.EndTime { // 活动正常结束
-			event = EventClose
-		}
-	case StateClosed:
-		if now >= e.StartTime && now < e.EndTime {
-			event = EventRestart
-		}
-	}
-
-	return
 }

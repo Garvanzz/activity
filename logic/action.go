@@ -28,15 +28,10 @@ const (
 var (
 	transitions = []fsm.Transition{
 		{StateWaitting, EventStart, StateRunning, ActionStart},
-		{StateWaitting, EventStop, StateStopped, ActionStop},
-		{StateWaitting, EventClose, StateClosed, ActionClose},
-
+		{StateWaitting, EventClose, StateClosed, ActionClose}, // 等待开启中的活动 时间修改了 就不再处理了
 		{StateRunning, EventStop, StateStopped, ActionStop},
 		{StateRunning, EventClose, StateClosed, ActionClose},
-
 		{StateStopped, EventRecover, StateRunning, ActionRecover},
-		{StateStopped, EventClose, StateClosed, ActionClose},
-
 		{StateClosed, EventRestart, StateWaitting, ActionRestart},
 	}
 )

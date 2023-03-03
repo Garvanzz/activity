@@ -4,6 +4,7 @@ import (
 	"activity/global"
 	"activity/logic"
 	"activity/logic/config"
+	"encoding/json"
 	"github.com/golang/protobuf/proto"
 	"time"
 )
@@ -22,20 +23,6 @@ type ConsumePD struct {
 	PdType  global.PDType   `json:"pd_type"`
 	Score   int32           `json:"score"`
 	GetList map[int32]int32 `json:"get_list"`
-}
-
-func (a *ActivityConsume) getPlayerData(obj global.IPlayer) *ConsumePD {
-	pd := obj.GetActivityData(a.GetId())
-	if pd == nil {
-		data := &ConsumePD{
-			PdType:  global.ConsumePD,
-			GetList: make(map[int32]int32),
-		}
-
-		obj.SetActivityData(a.GetId(), data)
-		return data
-	}
-	return pd.(*ConsumePD)
 }
 
 func (a *ActivityConsume) Format(obj global.IPlayer) proto.Message {
@@ -148,6 +135,18 @@ func (a *ActivityConsume) GetAward(obj global.IPlayer, index int32) {
 
 func (a *ActivityConsume) OnClose() {}
 
+func (a *ActivityConsume) Marshal() (string, error) {
+	if data, err := json.Marshal(a.data); err != nil {
+		return "", err
+	} else {
+		return string(data), nil
+	}
+}
+
+func (a *ActivityConsume) UnMarshal(data string) error {
+	return json.Unmarshal([]byte(data), a.data)
+}
+
 func (a *ActivityConsume) RedDot(pd *ConsumePD) bool {
 	if conf := logic.GetDataConf(a.GetCfgId()); conf != nil {
 		data := conf.(config.ConfActivityConsume)
@@ -163,4 +162,18 @@ func (a *ActivityConsume) RedDot(pd *ConsumePD) bool {
 	}
 
 	return false
+}
+
+func (a *ActivityConsume) getPlayerData(obj global.IPlayer) *ConsumePD {
+	pd := obj.GetActivityData(a.GetId())
+	if pd == nil {
+		data := &ConsumePD{
+			PdType:  global.ConsumePD,
+			GetList: make(map[int32]int32),
+		}
+
+		obj.SetActivityData(a.GetId(), data)
+		return data
+	}
+	return pd.(*ConsumePD)
 }
