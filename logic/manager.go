@@ -20,44 +20,65 @@ var (
 var _ global.ActivityManager = &Manager{}
 
 type Manager struct {
-	Entitys  map[int32]*Entity
 	AutoId   int32
 	LastTick int64
+	entitys  sync.Map
 	sm       *fsm.StateMachine
-	lock     sync.RWMutex // TODO:除了增添、删除活动 其他地方有无必要增加锁
 }
 
 func GetInstance() global.ActivityManager {
 	return instance
 }
 
-func (m *Manager) Create() {
+func (m *Manager) Create() bool {
 	instance = new(Manager)
-	instance.Entitys = make(map[int32]*Entity)
 	instance.sm = fsm.NewStateMachine(&fsm.DefaultDelegate{P: instance}, transitions...)
 
 	reply, err := redis.RedisExec("GET", "activityMgr")
 	if err != nil {
 		log.Error("load activity manager from redis error:%v", err)
-		return
+		return false
 	}
 
 	if reply != nil {
 		err := json.Unmarshal(reply.([]byte), m)
 		if err != nil {
 			log.Error("unmarshal activity manager data error:", err)
-			return
+			return false
 		}
 	}
 
-	for _, entity := range m.Entitys {
+	reply, err = redis.RedisExec("GET", "activityData")
+	if err != nil {
+		log.Error("load activity entity from redis error:%v", err)
+		return false
+	}
+
+	entitys := make(map[int32]*entity)
+
+	if reply != nil {
+		err := json.Unmarshal(reply.([]byte), &entitys)
+		if err != nil {
+			log.Error("unmarshal activity entity data error:", err)
+			return false
+		}
+	}
+
+	existIds := make(map[int32]int)
+
+	for id, entity := range entitys {
+		existIds[entity.CfgId] = 1
+
+		m.entitys.Store(id, entity)
+
+		// 只有运行中的活动需要加载数据
+		if entity.State != StateRunning {
+			continue
+		}
+
 		if handler, ok := getActivityHandler(entity); ok {
 			entity.handler = handler
-
-			// 只有运行中的活动需要加载数据
-			if entity.State == StateRunning {
-				entity.load()
-			}
+			entity.load()
 
 			event := entity.checkConfig()
 			if event != EventNone {
@@ -73,51 +94,49 @@ func (m *Manager) Create() {
 	// 根据配置加载新活动
 	confs := make(map[int64]config.ConfActivityElement, 0)
 
-	existIds := make(map[int32]int)
-	for _, entity := range m.Entitys {
-		existIds[entity.CfgId] = 1
-	}
-
 	for _, conf := range confs {
 		if _, ok := existIds[conf.ID]; !ok {
 			m.register(conf.ID)
 		}
 	}
 
-	return
+	return true
 }
 
-func (m *Manager) Stop() {
-	//m.lock.Lock()
-	for _, entity := range m.Entitys {
-		d, err := entity.handler.Marshal()
-		if err != nil {
-			log.Error("")
-			continue
-		}
+func (m *Manager) Stop() bool {
+	entitys := make(map[int32]*entity, 0)
+	m.entitys.Range(func(key, value interface{}) bool {
+		entity := value.(*entity)
+		entity.save()
+		entitys[key.(int32)] = entity
+		return true
+	})
 
-		if d != "" {
-			data.SaveData(entity.Id, d)
-		}
-	}
-	//m.lock.Unlock()
-
-	b, err := json.Marshal(m)
+	b, err := json.Marshal(entitys)
 	if err != nil {
 		log.Error("activity manager stop marshal error:%v", err)
-		return
+		return false
+	}
+
+	redis.RedisExec("SET", "ActivityData", string(b))
+
+	b, err = json.Marshal(m)
+	if err != nil {
+		log.Error("activity manager stop marshal error1:%v", err)
+		return false
 	}
 
 	redis.RedisExec("SET", "ActivityMgr", string(b))
+
+	return true
 }
 
 func (m *Manager) Update(now time.Time, elspNanoSecond int64) {
-	m.lock.RLock()
-	defer m.lock.RUnlock()
+	m.entitys.Range(func(key, value interface{}) bool {
+		entity := value.(*entity)
 
-	for _, entity := range m.Entitys {
 		if entity.State == StateStopped {
-			continue
+			return true
 		}
 
 		event := entity.checkState()
@@ -125,19 +144,21 @@ func (m *Manager) Update(now time.Time, elspNanoSecond int64) {
 			err := m.sm.Trigger(entity.State, event, entity)
 			if err != nil {
 				log.Error("sm trigger error:%v", err)
-				continue
+				return true
 			}
 		}
 
 		if entity.isActive() {
 			entity.handler.Update(now, elspNanoSecond)
 		}
-	}
+
+		return true
+	})
 }
 
 // fsm process
 func (m *Manager) OnExit(fromState string, args []interface{}) {
-	e := args[0].(*Entity)
+	e := args[0].(*entity)
 	if e.State != fromState {
 		log.Error("OnExit state error:%v,currentState:%v", fromState, e.State)
 		return
@@ -145,7 +166,7 @@ func (m *Manager) OnExit(fromState string, args []interface{}) {
 }
 
 func (m *Manager) Action(action string, fromState string, toState string, args []interface{}) error {
-	e := args[0].(*Entity)
+	e := args[0].(*entity)
 
 	switch action {
 	case ActionStart: // waitting -> running
@@ -159,15 +180,17 @@ func (m *Manager) Action(action string, fromState string, toState string, args [
 	case ActionStop:
 		if fromState == StateRunning {
 			// save data
+			e.save()
+			e.handler = nil
 		}
 	case ActionRecover: // stop -> running
-		d := data.LoadData(e.Id)
-		if err := e.handler.UnMarshal(d); err != nil {
-			log.Error("")
+		if handler, ok := getActivityHandler(e); ok {
+			e.handler = handler
+			e.load()
+			e.handler.OnInit()
+		} else {
+			log.Error("activity recover error")
 		}
-
-		e.handler.OnInit()
-
 	case ActionRestart: // closed -> waitting
 		// 分配新的id
 		e.Id = m.Id()
@@ -182,7 +205,7 @@ func (m *Manager) OnActionFailure(action string, fromState string, toState strin
 }
 
 func (m *Manager) OnEnter(toState string, args []interface{}) {
-	e := args[0].(*Entity)
+	e := args[0].(*entity)
 	e.State = toState
 }
 
@@ -223,11 +246,15 @@ func (m *Manager) notify(obj global.IPlayer, content map[string]interface{}) {
 
 	eventKey, ok := key.(string)
 	if ok && eventKey != "" {
-		for _, entity := range m.Entitys {
+
+		m.entitys.Range(func(k, v interface{}) bool {
+			entity := v.(*entity)
+
 			if entity.isActive() {
 				entity.handler.OnEvent(eventKey, obj, content)
 			}
-		}
+			return true
+		})
 	}
 }
 
@@ -257,7 +284,7 @@ func (m *Manager) register(cfgId int32) {
 		endTime = parseTime.Unix()
 	}
 
-	e := new(Entity)
+	e := new(entity)
 	e.Id = id
 	e.Type = conf.Type
 	e.CfgId = conf.ID
@@ -267,7 +294,214 @@ func (m *Manager) register(cfgId int32) {
 
 	if handler, ok := getActivityHandler(e); ok {
 		e.handler = handler
-		m.Entitys[id] = e
+
+		m.entitys.Store(id, e)
 		return
 	}
+}
+
+// TODO: API
+func (m *Manager) GetAward(obj global.IPlayer, id int32, index int32) {
+	v, ok := m.entitys.Load(id)
+	if !ok {
+		//obj.GetConnection().SendError(int(proto_base.ErrorCode_ActivityNotFound))
+		//obj.GetConnection().Send(&proto_activity.ResponseActivityAward{Success: false})
+		return
+	}
+
+	entity := v.(*entity)
+
+	if !entity.isActive() {
+		//obj.GetConnection().SendError(int(proto_base.ErrorCode_ActivityNotOpen))
+		//obj.GetConnection().Send(&proto_activity.ResponseActivityAward{Success: false})
+	}
+
+	entity.handler.GetAward(obj, index)
+}
+
+func (m *Manager) GetActivityData(id int32, obj global.IPlayer) {
+	v, ok := m.entitys.Load(id)
+	if !ok {
+		//obj.GetConnection().SendError(int(proto_base.ErrorCode_ActivityNotFound))
+		return
+	}
+
+	entity := v.(*entity)
+	if !entity.isActive() {
+		//obj.GetConnection().SendError(int(proto_base.ErrorCode_ActivityNotOpen))
+		return
+	}
+
+	//response := &proto_activity.ResponseActivityData{}
+	//response.Id = entity.Id
+	//response.ConfigId = entity.CfgId
+
+	//data := entity.handler.Format(obj)
+	//setProtoByType(entity.ActType, response, data)
+	//log.Debug("GetActivityData :%v", response)
+	//obj.GetConnection().Send(response)
+}
+
+func (m *Manager) GetActivityStatus(obj global.IPlayer) {
+	//response := new(proto_activity.ResponseActivityStatus)
+	//response.Info = make([]*proto_activity.ActivityInfo, 0)
+
+	m.entitys.Range(func(key, value interface{}) bool {
+		entity := value.(*entity)
+
+		if entity.isActive() {
+			//这里成长礼包特殊处理
+			//if entity.Type == global.ActivityType_GrowGift {
+			//	pd := entity.handler.(*ActivityGrowGift).getPlayerData(obj)
+			//	if pd.EndTime == 0 { // 初始化
+			//		pd.init(entity.CfgId, obj)
+			//	}
+			//	pd.refresh(entity.CfgId)
+			//	if !pd.Closed {
+			//		response.Info = append(response.Info, &proto_activity.ActivityInfo{
+			//			Id:        actId,
+			//			ConfigId:  entity.CfgId,
+			//			StartTime: entity.StartTime.Unix(),
+			//			EndTime:   pd.EndTime,
+			//		})
+			//	}
+			//	continue
+			//}
+
+			// 新手礼包特殊处理 购买过就不再显示活动
+			if entity.Type == global.ActivityType_Newcomer {
+				//if obj.GetBeginnerPurchase() {
+				return true
+				//}
+			}
+
+			//var endTime int64
+			//if entity.TimeType == global.ActTime_AlwaysOpen {
+			//	endTime = 0
+			//} else {
+			//	endTime = entity.EndTime
+			//}
+
+			//response.Info = append(response.Info, &proto_activity.ActivityInfo{
+			//	Id:        entity.Id,
+			//	ConfigId:  entity.CfgId,
+			//	StartTime: entity.StartTime.Unix(),
+			//	EndTime:   endTime,
+			//})
+		}
+		return true
+	})
+
+	//log.Debug("GetActivityStatus :%v", response)
+	//obj.GetConnection().Send(response)
+}
+
+func (m *Manager) GetActivityDataList(obj global.IPlayer) {
+	//response := &proto_activity.ResponseActivityDataList{
+	//	List: make([]*proto_activity.ResponseActivityData, 0),
+	//}
+
+	m.entitys.Range(func(key, value interface{}) bool {
+		entity := value.(*entity)
+
+		if !entity.isActive() {
+			return true
+		}
+
+		//ret := &proto_activity.ResponseActivityData{}
+		//ret.Id = entity.Id
+		//ret.ConfigId = entity.CfgId
+		//
+		//d := entity.handler.Format(obj)
+		//setProtoByType(entity.Type, ret, data)
+		//response.List = append(response.List, actData)
+		return true
+	})
+
+	//log.Debug("GetActivityDataList :%v", response)
+	//obj.GetConnection().Send(response)
+}
+
+// 解锁战令
+func (m *Manager) UnlockWarOrder(obj global.IPlayer, id int32) {
+	m.entitys.Range(func(key, value interface{}) bool {
+		entity := value.(*entity)
+		if entity.Type == global.ActivityType_PvpWarOrder ||
+			entity.Type == global.ActivityType_WarOrder ||
+			entity.Type == global.ActivityType_PveWarOrder {
+
+			if entity.isActive() {
+				//TODO:unlock 战令
+				//activity := entity.handler.(*ActivityWarOrder)
+				//activity.unlock(obj, id)
+			}
+		}
+		return true
+	})
+}
+
+func (m *Manager) StopActivity(id int32) bool {
+	v, ok := m.entitys.Load(id)
+	if !ok {
+		log.Debug("stop activity id error:%v", id)
+		return false
+	}
+
+	entity := v.(*entity)
+
+	if !entity.isActive() {
+		return false
+	}
+
+	if err := m.sm.Trigger(entity.State, EventStop, entity); err != nil {
+		log.Error("%v", err)
+		return false
+	}
+
+	return true
+}
+
+func (m *Manager) RecoverActivity(id int32) bool {
+	v, ok := m.entitys.Load(id)
+	if !ok {
+		log.Debug("recover activity id error:%v", id)
+		return false
+	}
+
+	entity := v.(*entity)
+
+	if entity.State != StateStopped {
+		log.Error("recover activity state error:%v", entity.State)
+		return false
+	}
+
+	err := m.sm.Trigger(entity.State, EventRecover, entity)
+	if err != nil {
+		log.Error("%v", err)
+		return false
+	}
+
+	return true
+}
+
+func (m *Manager) DelActivity(id int32) bool {
+	v, ok := m.entitys.Load(id)
+	if !ok {
+		log.Debug("del activity id error:%v", id)
+		return false
+	}
+
+	entity := v.(*entity)
+
+	if entity.State == StateRunning {
+		err := m.sm.Trigger(entity.State, EventStop, entity)
+		if err != nil {
+			log.Error("%v", err)
+			return false
+		}
+	}
+
+	data.DelData(id)
+	m.entitys.Delete(id)
+	return true
 }

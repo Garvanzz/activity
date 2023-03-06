@@ -26,7 +26,7 @@ type ConsumePD struct {
 }
 
 func (a *ActivityConsume) Format(obj global.IPlayer) proto.Message {
-	//pd := a.getPlayerData(obj)
+	pd := a.getPlayerData(obj)
 
 	// 如果是充值活动就每次获取的时候更新数值
 	//if a.GetType() == global.ActivityType_Recharge {

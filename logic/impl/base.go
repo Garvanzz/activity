@@ -35,3 +35,5 @@ func (base *BaseActivity) Update(now time.Time, elspNanoSecond int64) {}
 func (base *BaseActivity) Format(obj global.IPlayer) proto.Message { return nil }
 
 func (base *BaseActivity) OnDayReset() {}
+
+func (base *BaseActivity) GetAward(obj global.IPlayer, index int32) {}

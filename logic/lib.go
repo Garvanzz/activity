@@ -5,29 +5,22 @@ import (
 	"strings"
 )
 
-// get activity config by id
-func GetConf(id int32) *config.ConfActivityElement {
-	return &config.ConfActivityElement{}
+func GetConf(configId int32) *config.ConfActivityElement {
+	actConf, ok := config.AllJsons["ConfActivity"].(map[int32]config.ConfActivityElement)[configId]
+	if !ok {
+		return nil
+	}
+
+	return &actConf
 }
 
-//func GetConf(configId int64) *global.ConfActivityElement {
-//	actConf, ok := cfg.ConfigMgr.GetCfg("ConfActivity").(map[int64]global.ConfActivityElement)[configId]
-//	if !ok {
-//		return nil
-//	}
-//
-//	return &actConf
-//}
-
 func GetDataConf(configId int32) interface{} {
-	//actDataConf, ok := cfg.ConfigMgr.GetCfg("ConfActivityData").(map[int64]interface{})[configId]
-	//if !ok {
-	//	return nil
-	//}
-	//
-	//return actDataConf
+	actDataConf, ok := config.AllJsons["ConfActivity"].(map[int32]interface{})[configId]
+	if !ok {
+		return nil
+	}
 
-	return nil
+	return actDataConf
 }
 
 func Trim(s string) string {

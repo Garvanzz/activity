@@ -10,6 +10,7 @@ type PDType int32
 // 活动玩家数据类型
 const (
 	ConsumePD PDType = iota + 1
+	TaskPD
 )
 
 // 配置表时间类型
@@ -40,5 +41,6 @@ type IActivity interface {
 	OnEvent(key string, obj IPlayer, content map[string]interface{})
 	Update(time.Time, int64)
 	Format(obj IPlayer) proto.Message
+	GetAward(obj IPlayer, index int32)
 	OnDayReset()
 }
