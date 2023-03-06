@@ -1,7 +1,8 @@
 package main
 
 import (
-	"activity/logic/config"
+	"activity/global"
+	"activity/logic"
 	"activity/tools/log"
 	"activity/tools/redis"
 	"encoding/json"
@@ -52,22 +53,23 @@ func (p *player) save() {
 
 func main() {
 	log.Debug("start-----------------")
-	//mgr := logic.GetInstance()
-	//mgr.Create()
-	//
-	//obj := new(player)
-	//obj.load()
 
-	//mgr.OnEvent(&global.CEvent{Obj: obj, Type: global.Event_Type_ActivityEvent, Content: map[string]interface{}{
-	//	"key": "test",
-	//}})
+	//加载配置
+	global.Init()
 
-	//mgr.Stop()
-	//
-	//obj.save()
+	mgr := logic.GetInstance()
+	mgr.Create()
 
-	// 加载配置
-	config.Init()
+	obj := new(player)
+	obj.load()
+
+	// mgr.OnEvent(&global.CEvent{Obj: obj, Type: global.Event_Type_ActivityEvent, Content: map[string]interface{}{
+	// 	"key": "test",
+	// }})
+
+	mgr.Stop()
+
+	obj.save()
 
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt, os.Kill, syscall.SIGKILL, syscall.SIGTERM, syscall.SIGQUIT, syscall.SIGABRT)

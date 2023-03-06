@@ -2,7 +2,6 @@ package logic
 
 import (
 	"activity/global"
-	"activity/logic/config"
 	"activity/logic/data"
 	"activity/tools/fsm"
 	"activity/tools/log"
@@ -92,7 +91,7 @@ func (m *Manager) Create() bool {
 	}
 
 	// 根据配置加载新活动
-	confs := make(map[int64]config.ConfActivityElement, 0)
+	confs := make(map[int64]global.ConfActivityElement, 0)
 
 	for _, conf := range confs {
 		if _, ok := existIds[conf.ID]; !ok {
@@ -262,7 +261,7 @@ func (m *Manager) notify(obj global.IPlayer, content map[string]interface{}) {
 func (m *Manager) register(cfgId int32) {
 	id := m.Id()
 
-	conf := GetConf(cfgId)
+	conf := global.GetConf(cfgId)
 
 	var startTime, endTime int64
 

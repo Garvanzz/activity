@@ -1,11 +1,11 @@
-package config
+package global
 
 import (
-	"activity/global"
 	"activity/tools/log"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"os"
 )
 
 //activity config
@@ -82,9 +82,13 @@ func Init() {
 	jsonName := "ConfActivity"
 	obj := &ConfActivity{}
 
-	jsonPath := "D:/wjc/project/activity/logic/config/json"
+	jsonPath, err := os.Getwd()
+	if err != nil {
+		log.Error("os wd:%v", err)
+		return
+	}
 
-	data, err := ioutil.ReadFile(fmt.Sprintf("%s/%s.json", jsonPath, jsonName))
+	data, err := ioutil.ReadFile(fmt.Sprintf("%s\\json\\%s.json", jsonPath, jsonName))
 	if err != nil {
 		log.Fatal("%v", err)
 	}
@@ -101,8 +105,8 @@ func Init() {
 	m := make(map[int32]interface{})
 	for _, activity := range idconfMap {
 		switch activity.Type {
-		case global.ActivityType_Cousume:
-			data, _ :=ioutil.ReadFile(fmt.Sprintf("%s/%s.json", jsonPath, activity.Type))
+		case ActivityType_Cousume:
+			data, _ := ioutil.ReadFile(fmt.Sprintf("%s\\json\\%s.json", jsonPath, activity.Type))
 			list := make([]*ActivityConsumeObj, 0)
 			err := json.Unmarshal(data, &list)
 			if err != nil {
@@ -127,8 +131,8 @@ func Init() {
 
 				m[activityId] = obj
 			}
-		case global.ActivityType_Task:
-			data, _ :=ioutil.ReadFile(fmt.Sprintf("%s/%s.json", jsonPath, activity.Type))
+		case ActivityType_Task:
+			data, _ := ioutil.ReadFile(fmt.Sprintf("%s\\json\\%s.json", jsonPath, activity.Type))
 			list := make([]*ActivityTaskObj, 0)
 			err := json.Unmarshal(data, &list)
 			if err != nil {
@@ -198,5 +202,23 @@ func Init() {
 		}
 	}
 
-	AllJsons["ActivityData"] = m
+	AllJsons["ConfActivityData"] = m
+}
+
+func GetConf(configId int32) *ConfActivityElement {
+	actConf, ok := AllJsons["ConfActivity"].(map[int32]ConfActivityElement)[configId]
+	if !ok {
+		return nil
+	}
+
+	return &actConf
+}
+
+func GetDataConf(configId int32) interface{} {
+	actDataConf, ok := AllJsons["ConfActivityData"].(map[int32]interface{})[configId]
+	if !ok {
+		return nil
+	}
+
+	return actDataConf
 }

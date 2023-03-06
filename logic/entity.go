@@ -75,7 +75,7 @@ func (e *entity) checkState() (event string) {
 func (e *entity) checkConfig() (event string) {
 	event = EventNone
 
-	conf := GetConf(e.CfgId)
+	conf := global.GetConf(e.CfgId)
 	if conf == nil {
 		log.Error("activity config error:%v", e.CfgId)
 		return

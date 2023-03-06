@@ -2,10 +2,9 @@ package impl
 
 import (
 	"activity/global"
-	"activity/logic"
-	"activity/logic/config"
-	"github.com/golang/protobuf/proto"
 	"time"
+
+	"github.com/golang/protobuf/proto"
 )
 
 // 活跃活动
@@ -201,8 +200,8 @@ func (pd *TaskPD) loadTask(cfgId int32) {
 		return
 	}
 
-	dataConf := logic.GetDataConf(cfgId)
-	conf := dataConf.(config.ConfActivityTask)
+	dataConf := global.GetDataConf(cfgId)
+	conf := dataConf.(global.ConfActivityTask)
 
 	taskList := make(map[int32]*TaskInfo)
 	for id, task := range conf.Tasks {

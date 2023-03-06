@@ -6,11 +6,15 @@ import (
 	"activity/tools/log"
 )
 
-func getActivityHandler(entity *Entity) (global.IActivity, bool) {
+func getActivityHandler(entity *entity) (global.IActivity, bool) {
 	var handler global.IActivity
 	switch entity.Type {
 	case global.ActivityType_Cousume:
 		h := new(impl.ActivityConsume)
+		h.BaseInfo = entity
+		handler = h
+	case global.ActivityType_Task:
+		h := new(impl.ActivityTask)
 		h.BaseInfo = entity
 		handler = h
 	default:

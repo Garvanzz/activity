@@ -2,11 +2,10 @@ package impl
 
 import (
 	"activity/global"
-	"activity/logic"
-	"activity/logic/config"
 	"encoding/json"
-	"github.com/golang/protobuf/proto"
 	"time"
+
+	"github.com/golang/protobuf/proto"
 )
 
 // 累计消费活动
@@ -26,7 +25,7 @@ type ConsumePD struct {
 }
 
 func (a *ActivityConsume) Format(obj global.IPlayer) proto.Message {
-	pd := a.getPlayerData(obj)
+	// pd := a.getPlayerData(obj)
 
 	// 如果是充值活动就每次获取的时候更新数值
 	//if a.GetType() == global.ActivityType_Recharge {
@@ -90,13 +89,13 @@ func (a *ActivityConsume) OnEvent(key string, obj global.IPlayer, content map[st
 
 // 目标分数变成了key 所以index=实际领取奖励需要的分数
 func (a *ActivityConsume) GetAward(obj global.IPlayer, index int32) {
-	conf := logic.GetDataConf(a.GetCfgId())
+	conf := global.GetDataConf(a.GetCfgId())
 	if conf == nil {
 		//obj.GetConnection().SendError(int(proto_base.ErrorCode_ActivityConfNotFound))
 		//obj.GetConnection().Send(&proto_activity.ResponseActivityAward{Success: false})
 		return
 	}
-	data := conf.(config.ConfActivityConsume)
+	data := conf.(global.ConfActivityConsume)
 
 	// 没有该奖励配置
 	awards, ok := data.Reward[index]
@@ -148,8 +147,8 @@ func (a *ActivityConsume) UnMarshal(data string) error {
 }
 
 func (a *ActivityConsume) RedDot(pd *ConsumePD) bool {
-	if conf := logic.GetDataConf(a.GetCfgId()); conf != nil {
-		data := conf.(config.ConfActivityConsume)
+	if conf := global.GetDataConf(a.GetCfgId()); conf != nil {
+		data := conf.(global.ConfActivityConsume)
 
 		for target := range data.Reward {
 			if pd.Score >= target {
