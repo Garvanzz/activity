@@ -1,18 +1,6 @@
 package global
 
-const (
-	ActivityType_Newcomer    = "ConfPlayerGift"  // 新手礼包活动
-	ActivityType_Privilege   = "ConfPrivilege"   // 特权活动
-	ActivityType_WarOrder    = "ConfWarOrder"    // 最强指挥官
-	ActivityType_SpecialGift = "ConfSpecialGift" // 礼包类活动
-	ActivityType_Recharge    = "ConfComRecharge" // 充值类活动
-	ActivityType_Cousume     = "ConfConsume"     // 累计积分活动
-	ActivityType_PveWarOrder = "ConfPveOrder"    // Pve战令
-	ActivityType_PvpWarOrder = "ConfPvpOrder"    // Pvp战令
-	ActivityType_GrowGift    = "ConfGrowGift"    // 成长礼包
-	ActivityType_CdKey       = "ConfCdkeyGift"   // CdKey活动
-	ActivityType_Task        = "ConfLiveness"    // 活跃活动
-)
+import "time"
 
 type CEvent struct {
 	Obj     IPlayer
@@ -32,5 +20,7 @@ type ActivityManager interface {
 	StopActivity(id int32) bool                     // 暂停活动
 	RecoverActivity(id int32) bool                  // 重启活动
 	DelActivity(id int32) bool                      // 删除活动
+	Update(now time.Time, elspNanoSecond int64)     // tick
+
 	//OnRet(ret *dbengine.CDBRet)  //db返回回调
 }

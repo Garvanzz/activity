@@ -5,10 +5,12 @@ import (
 	"activity/logic"
 	"activity/tools/log"
 	"activity/tools/redis"
+	timer2 "activity/tools/timer"
 	"encoding/json"
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 )
 
 type player struct {
@@ -51,6 +53,19 @@ func (p *player) save() {
 	redis.RedisExec("SET", "PlayerTestData", string(b))
 }
 
+//运行
+func run(cb func()) {
+	interval := time.Second
+
+	AfterFunc(interval, cb)
+}
+
+func AfterFunc(d time.Duration, cb func()) *time.Timer {
+	return time.AfterFunc(d, func() {
+		cb()
+	})
+}
+
 func main() {
 	log.Debug("start-----------------")
 
@@ -63,17 +78,29 @@ func main() {
 	obj := new(player)
 	obj.load()
 
-	// mgr.OnEvent(&global.CEvent{Obj: obj, Type: global.Event_Type_ActivityEvent, Content: map[string]interface{}{
-	// 	"key": "test",
-	// }})
+	timer := timer2.New(time.Second, mgr.Update)
+	timer.Begin()
 
-	mgr.Stop()
+	// event notify
+	// event()
 
-	obj.save()
+	time.Sleep(3 * time.Second)
+
+	mgr.GetActivityStatus(nil)
 
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt, os.Kill, syscall.SIGKILL, syscall.SIGTERM, syscall.SIGQUIT, syscall.SIGABRT)
 	<-c
 
+	timer.Stop()
+	mgr.Stop()
+	obj.save()
+
 	log.Debug("end-----------------")
+}
+
+func event(m global.ActivityManager, obj *player) {
+	m.OnEvent(&global.CEvent{Obj: obj, Type: global.Event_Type_ActivityEvent, Content: map[string]interface{}{
+		"key": "test",
+	}})
 }

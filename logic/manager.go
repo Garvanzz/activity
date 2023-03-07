@@ -29,11 +29,13 @@ func GetInstance() global.ActivityManager {
 	return instance
 }
 
-func (m *Manager) Create() bool {
+func init() {
 	instance = new(Manager)
 	instance.sm = fsm.NewStateMachine(&fsm.DefaultDelegate{P: instance}, transitions...)
+}
 
-	reply, err := redis.RedisExec("GET", "activityMgr")
+func (m *Manager) Create() bool {
+	reply, err := redis.RedisExec("GET", "ActivityMgr")
 	if err != nil {
 		log.Error("load activity manager from redis error:%v", err)
 		return false
@@ -47,14 +49,13 @@ func (m *Manager) Create() bool {
 		}
 	}
 
-	reply, err = redis.RedisExec("GET", "activityData")
+	reply, err = redis.RedisExec("GET", "ActivityData")
 	if err != nil {
 		log.Error("load activity entity from redis error:%v", err)
 		return false
 	}
 
 	entitys := make(map[int32]*entity)
-
 	if reply != nil {
 		err := json.Unmarshal(reply.([]byte), &entitys)
 		if err != nil {
@@ -63,36 +64,38 @@ func (m *Manager) Create() bool {
 		}
 	}
 
-	existIds := make(map[int32]int)
+	log.Debug("mgr:Id:%v,tickTime:%v,entity len:%v", m.AutoId, m.LastTick, len(entitys))
 
+	existIds := make(map[int32]int)
 	for id, entity := range entitys {
 		existIds[entity.CfgId] = 1
 
 		m.entitys.Store(id, entity)
 
 		// 只有运行中的活动需要加载数据
-		if entity.State != StateRunning {
-			continue
-		}
+		if entity.State == StateRunning {
+			handler, ok := getActivityHandler(entity)
+			if !ok {
+				continue
+			}
 
-		if handler, ok := getActivityHandler(entity); ok {
 			entity.handler = handler
 			entity.load()
+			entity.handler.OnInit()
+		}
 
-			event := entity.checkConfig()
-			if event != EventNone {
-				err := m.sm.Trigger(entity.State, event, entity)
-				if err != nil {
-					log.Error("%v", err)
-					continue
-				}
+		event := entity.checkConfig()
+		if event != EventNone {
+			err := m.sm.Trigger(entity.State, event, entity)
+			if err != nil {
+				log.Error("%v", err)
+				continue
 			}
 		}
 	}
 
 	// 根据配置加载新活动
-	confs := make(map[int64]global.ConfActivityElement, 0)
-
+	confs := global.AllJsons["ConfActivity"].(map[int32]global.ConfActivityElement)
 	for _, conf := range confs {
 		if _, ok := existIds[conf.ID]; !ok {
 			m.register(conf.ID)
@@ -169,20 +172,29 @@ func (m *Manager) Action(action string, fromState string, toState string, args [
 
 	switch action {
 	case ActionStart: // waitting -> running
-		e.handler.OnInit()
-		e.handler.OnStart()
+		log.Debug("actionStart:%v,%v", e.Id, e.CfgId)
+		if handler, ok := getActivityHandler(e); ok {
+			e.handler = handler
+			e.handler.OnInit()
+			e.handler.OnStart()
+		} else {
+			log.Error("activity start error")
+		}
 	case ActionClose:
-		e.handler.OnClose()
-
-		// clear data
-		data.DelData(e.Id)
+		log.Debug("actionClose:%v,%v", e.Id, e.CfgId)
+		if e.handler != nil {
+			e.handler.OnClose()
+			e.handler = nil
+			data.DelData(e.Id) // 活动关闭清空数据
+		}
 	case ActionStop:
+		log.Debug("actionStop:%v,%v", e.Id, e.CfgId)
 		if fromState == StateRunning {
-			// save data
 			e.save()
 			e.handler = nil
 		}
 	case ActionRecover: // stop -> running
+		log.Debug("actionRecover:%v,%v", e.Id, e.CfgId)
 		if handler, ok := getActivityHandler(e); ok {
 			e.handler = handler
 			e.load()
@@ -191,6 +203,7 @@ func (m *Manager) Action(action string, fromState string, toState string, args [
 			log.Error("activity recover error")
 		}
 	case ActionRestart: // closed -> waitting
+		log.Debug("actionRestart:%v,%v", e.Id, e.CfgId)
 		// 分配新的id
 		e.Id = m.Id()
 	default:
@@ -265,22 +278,29 @@ func (m *Manager) register(cfgId int32) {
 
 	var startTime, endTime int64
 
-	if conf.StartTime != "" {
+	if conf.ActTime == global.ActTime_CheckTime {
+		if conf.StartTime == "" || conf.EndTime == "" {
+			log.Error("register timer error")
+			return
+		}
 		parseTime, err := time.ParseInLocation("2006-01-02 15:04:05", Trim(conf.StartTime), time.Local)
 		if err != nil {
-			log.Error("")
+			log.Error("parse start time error")
 			return
 		}
 		startTime = parseTime.Unix()
-	}
 
-	if conf.EndTime != "" {
-		parseTime, err := time.ParseInLocation("2006-01-02 15:04:05", Trim(conf.EndTime), time.Local)
+		parseTime, err = time.ParseInLocation("2006-01-02 15:04:05", Trim(conf.EndTime), time.Local)
 		if err != nil {
-			log.Error("")
+			log.Error("parse end time error")
 			return
 		}
 		endTime = parseTime.Unix()
+
+		if startTime >= endTime {
+			log.Error("register timer error1")
+			return
+		}
 	}
 
 	e := new(entity)
@@ -291,12 +311,15 @@ func (m *Manager) register(cfgId int32) {
 	e.EndTime = endTime
 	e.TimeType = conf.ActTime
 
-	if handler, ok := getActivityHandler(e); ok {
-		e.handler = handler
-
-		m.entitys.Store(id, e)
-		return
+	switch e.TimeType {
+	case global.ActTime_Close:
+		e.State = StateClosed
+	case global.ActTime_CheckTime, global.ActTime_AlwaysOpen:
+		e.State = StateWaitting
 	}
+
+	m.entitys.Store(id, e)
+	return
 }
 
 // TODO: API
@@ -348,46 +371,49 @@ func (m *Manager) GetActivityStatus(obj global.IPlayer) {
 	m.entitys.Range(func(key, value interface{}) bool {
 		entity := value.(*entity)
 
-		if entity.isActive() {
-			//这里成长礼包特殊处理
-			//if entity.Type == global.ActivityType_GrowGift {
-			//	pd := entity.handler.(*ActivityGrowGift).getPlayerData(obj)
-			//	if pd.EndTime == 0 { // 初始化
-			//		pd.init(entity.CfgId, obj)
-			//	}
-			//	pd.refresh(entity.CfgId)
-			//	if !pd.Closed {
-			//		response.Info = append(response.Info, &proto_activity.ActivityInfo{
-			//			Id:        actId,
-			//			ConfigId:  entity.CfgId,
-			//			StartTime: entity.StartTime.Unix(),
-			//			EndTime:   pd.EndTime,
-			//		})
-			//	}
-			//	continue
-			//}
+		log.Debug("status Id:%v,CfgId:%v,State:%v,TimeType:%v,StartTime:%v,EndTime:%v,handler:%v",
+			entity.Id, entity.CfgId, entity.State, entity.TimeType, entity.StartTime, entity.EndTime, entity.handler != nil)
 
-			// 新手礼包特殊处理 购买过就不再显示活动
-			if entity.Type == global.ActivityType_Newcomer {
-				//if obj.GetBeginnerPurchase() {
-				return true
-				//}
-			}
+		//if entity.isActive() {
+		//这里成长礼包特殊处理
+		//if entity.Type == global.ActivityType_GrowGift {
+		//	pd := entity.handler.(*ActivityGrowGift).getPlayerData(obj)
+		//	if pd.EndTime == 0 { // 初始化
+		//		pd.init(entity.CfgId, obj)
+		//	}
+		//	pd.refresh(entity.CfgId)
+		//	if !pd.Closed {
+		//		response.Info = append(response.Info, &proto_activity.ActivityInfo{
+		//			Id:        actId,
+		//			ConfigId:  entity.CfgId,
+		//			StartTime: entity.StartTime.Unix(),
+		//			EndTime:   pd.EndTime,
+		//		})
+		//	}
+		//	continue
+		//}
 
-			//var endTime int64
-			//if entity.TimeType == global.ActTime_AlwaysOpen {
-			//	endTime = 0
-			//} else {
-			//	endTime = entity.EndTime
-			//}
+		// 新手礼包特殊处理 购买过就不再显示活动
+		//if entity.Type == global.ActivityType_Newcomer {
+		//if obj.GetBeginnerPurchase() {
+		//return true
+		//}
+		//}
 
-			//response.Info = append(response.Info, &proto_activity.ActivityInfo{
-			//	Id:        entity.Id,
-			//	ConfigId:  entity.CfgId,
-			//	StartTime: entity.StartTime.Unix(),
-			//	EndTime:   endTime,
-			//})
-		}
+		//var endTime int64
+		//if entity.TimeType == global.ActTime_AlwaysOpen {
+		//	endTime = 0
+		//} else {
+		//	endTime = entity.EndTime
+		//}
+
+		//response.Info = append(response.Info, &proto_activity.ActivityInfo{
+		//	Id:        entity.Id,
+		//	ConfigId:  entity.CfgId,
+		//	StartTime: entity.StartTime.Unix(),
+		//	EndTime:   endTime,
+		//})
+		//}
 		return true
 	})
 

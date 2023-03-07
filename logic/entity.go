@@ -29,7 +29,7 @@ func (e *entity) GetId() int32    { return e.Id }
 // 加载游戏数据
 func (e *entity) load() {
 	d := data.LoadData(e.Id)
-	if d != "" {
+	if d != nil {
 		if err := e.handler.UnMarshal(d); err != nil {
 			log.Error("activity handler unmarshal error")
 		}
@@ -38,21 +38,34 @@ func (e *entity) load() {
 
 // 保存游戏数据
 func (e *entity) save() {
+	if e.handler == nil {
+		return
+	}
+
 	if v, err := e.handler.Marshal(); err != nil {
 		log.Error("activity handler marshal error")
 	} else {
-		data.SaveData(e.Id, v)
+
+		log.Debug("entity save id:%v,cfgId:%v,data:%v", e.Id, e.CfgId, v)
+		if v != "" {
+			data.SaveData(e.Id, v)
+		}
 	}
 }
 
 // 检查活动状态
 func (e *entity) checkState() (event string) {
 	event = EventNone
+
+	if e.TimeType == global.ActTime_Close { // TODO:check
+		return
+	}
+
 	now := time.Now().Unix()
 
 	switch e.State {
 	case StateWaitting:
-		if now >= e.StartTime && now < e.EndTime {
+		if (now >= e.StartTime && now < e.EndTime) || e.TimeType == global.ActTime_AlwaysOpen {
 			event = EventStart
 		} else if now >= e.EndTime {
 			event = EventClose
@@ -62,10 +75,9 @@ func (e *entity) checkState() (event string) {
 			event = EventClose
 		}
 	case StateClosed:
-		if now >= e.StartTime && now < e.EndTime {
+		if (now >= e.StartTime && now < e.EndTime) || e.TimeType == global.ActTime_AlwaysOpen {
 			event = EventRestart
 		}
-	case StateStopped:
 	}
 
 	return
@@ -86,6 +98,9 @@ func (e *entity) checkConfig() (event string) {
 
 	switch e.TimeType {
 	case global.ActTime_AlwaysOpen: // 常驻活动
+		e.StartTime = 0
+		e.EndTime = 0
+
 		if e.State == StateWaitting {
 			event = EventStart
 		} else if e.State == StateClosed {
@@ -114,12 +129,13 @@ func (e *entity) checkConfig() (event string) {
 		e.StartTime = startTime.Unix()
 		e.EndTime = endTime.Unix()
 
-		if e.State == StateRunning {
-			if startTime.Unix() > now { // 如果新开始时间还没到就关闭活动 等待重新开启
-				event = EventClose
-			}
+		if e.State == StateRunning && startTime.Unix() > now { // 这里算是二次开启了 所以需要手动关闭
+			event = EventClose
 		}
 	case global.ActTime_Close: // 关闭活动
+		e.StartTime = 0
+		e.EndTime = 0
+
 		if e.State == StateRunning || e.State == StateWaitting {
 			event = EventClose
 		}

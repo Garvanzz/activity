@@ -7,21 +7,21 @@ import (
 )
 
 const (
-	ActivityRedisKey = "ACTIVITY"
+	ActivityRedisKey = "ACTIVITYTEST"
 )
 
-func LoadData(id int32) string {
+func LoadData(id int32) []byte {
 	reply, err := redis.RedisExec("GET", fmt.Sprintf("%s:%d", ActivityRedisKey, id))
 	if err != nil {
 		log.Error("load activity data from redis error:%v", err)
-		return ""
+		return nil
 	}
 
 	if reply == nil {
-		return ""
+		return nil
 	}
 
-	return reply.(string)
+	return reply.([]byte)
 }
 
 func SaveData(id int32, data string) {

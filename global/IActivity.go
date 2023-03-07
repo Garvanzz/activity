@@ -26,6 +26,20 @@ const (
 	Event_Type_ActivityEvent
 )
 
+const (
+	ActivityType_Newcomer    = "ConfPlayerGift"  // 新手礼包活动
+	ActivityType_Privilege   = "ConfPrivilege"   // 特权活动
+	ActivityType_WarOrder    = "ConfWarOrder"    // 最强指挥官
+	ActivityType_SpecialGift = "ConfSpecialGift" // 礼包类活动
+	ActivityType_Recharge    = "ConfComRecharge" // 充值类活动
+	ActivityType_Cousume     = "ConfConsume"     // 累计积分活动
+	ActivityType_PveWarOrder = "ConfPveOrder"    // Pve战令
+	ActivityType_PvpWarOrder = "ConfPvpOrder"    // Pvp战令
+	ActivityType_GrowGift    = "ConfGrowGift"    // 成长礼包
+	ActivityType_CdKey       = "ConfCdkeyGift"   // CdKey活动
+	ActivityType_Task        = "ConfLiveness"    // 活跃活动
+)
+
 // player impl
 type IPlayer interface {
 	GetActivityData(id int32) interface{}
@@ -33,11 +47,11 @@ type IPlayer interface {
 }
 
 type IActivity interface {
-	OnInit()
-	OnStart()
-	OnClose()
+	OnInit()  // 每次加载完成都会调用一次
+	OnStart() // 只会调用一次
+	OnClose() // 活动结束调用
 	Marshal() (string, error)
-	UnMarshal(data string) error
+	UnMarshal(data []byte) error
 	OnEvent(key string, obj IPlayer, content map[string]interface{})
 	Update(time.Time, int64)
 	Format(obj IPlayer) proto.Message

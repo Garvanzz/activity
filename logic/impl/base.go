@@ -26,7 +26,7 @@ func (base *BaseActivity) OnClose() {}
 
 func (base *BaseActivity) Marshal() (string, error) { return "", nil }
 
-func (base *BaseActivity) UnMarshal(data string) error { return nil }
+func (base *BaseActivity) UnMarshal(data []byte) error { return nil }
 
 func (base *BaseActivity) OnEvent(key string, obj global.IPlayer, content map[string]interface{}) {}
 

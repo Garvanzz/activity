@@ -2,10 +2,10 @@ package impl
 
 import (
 	"activity/global"
+	"activity/tools/log"
 	"encoding/json"
-	"time"
-
 	"github.com/golang/protobuf/proto"
+	"time"
 )
 
 // 累计消费活动
@@ -15,7 +15,7 @@ type ActivityConsume struct {
 }
 
 type ActivityConsumeData struct {
-	StartTime time.Time
+	StartTime int64
 }
 
 type ConsumePD struct {
@@ -41,15 +41,15 @@ func (a *ActivityConsume) Format(obj global.IPlayer) proto.Message {
 	return nil
 }
 
-func (a *ActivityConsume) OnInit() {
-	if a.data == nil {
-		a.data = &ActivityConsumeData{
-			StartTime: time.Now(), // TODO:是否是要在这里初始化时间
-		}
-	}
-}
+func (a *ActivityConsume) OnInit() {}
 
-func (a *ActivityConsume) OnStart() {}
+func (a *ActivityConsume) OnStart() {
+	a.data = &ActivityConsumeData{
+		StartTime: time.Now().Unix(),
+	}
+
+	log.Debug("consume OnStart id:%v,cfgId:%v,data:%v", a.GetId(), a.GetCfgId(), a.data)
+}
 
 func (a *ActivityConsume) OnEvent(key string, obj global.IPlayer, content map[string]interface{}) {
 	switch key {
@@ -142,8 +142,9 @@ func (a *ActivityConsume) Marshal() (string, error) {
 	}
 }
 
-func (a *ActivityConsume) UnMarshal(data string) error {
-	return json.Unmarshal([]byte(data), a.data)
+func (a *ActivityConsume) UnMarshal(data []byte) error {
+	a.data = new(ActivityConsumeData)
+	return json.Unmarshal(data, a.data)
 }
 
 func (a *ActivityConsume) RedDot(pd *ConsumePD) bool {
