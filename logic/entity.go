@@ -45,7 +45,6 @@ func (e *entity) save() {
 	if v, err := e.handler.Marshal(); err != nil {
 		log.Error("activity handler marshal error")
 	} else {
-
 		log.Debug("entity save id:%v,cfgId:%v,data:%v", e.Id, e.CfgId, v)
 		if v != "" {
 			data.SaveData(e.Id, v)
@@ -57,12 +56,7 @@ func (e *entity) save() {
 func (e *entity) checkState() (event string) {
 	event = EventNone
 
-	if e.TimeType == global.ActTime_Close { // TODO:check
-		return
-	}
-
 	now := time.Now().Unix()
-
 	switch e.State {
 	case StateWaitting:
 		if (now >= e.StartTime && now < e.EndTime) || e.TimeType == global.ActTime_AlwaysOpen {
@@ -71,8 +65,12 @@ func (e *entity) checkState() (event string) {
 			event = EventClose
 		}
 	case StateRunning:
-		if now > e.EndTime && e.TimeType != global.ActTime_AlwaysOpen {
+		if e.TimeType == global.ActTime_Close {
 			event = EventClose
+		} else if e.TimeType == global.ActTime_CheckTime {
+			if now < e.StartTime || now > e.EndTime {
+				event = EventClose
+			}
 		}
 	case StateClosed:
 		if (now >= e.StartTime && now < e.EndTime) || e.TimeType == global.ActTime_AlwaysOpen {
@@ -124,14 +122,8 @@ func (e *entity) checkConfig() (event string) {
 			return
 		}
 
-		now := time.Now().Unix()
-
 		e.StartTime = startTime.Unix()
 		e.EndTime = endTime.Unix()
-
-		if e.State == StateRunning && startTime.Unix() > now { // 这里算是二次开启了 所以需要手动关闭
-			event = EventClose
-		}
 	case global.ActTime_Close: // 关闭活动
 		e.StartTime = 0
 		e.EndTime = 0

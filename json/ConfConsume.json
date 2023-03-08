@@ -54,5 +54,33 @@
         "num": 15
       }
     ]
+  },
+  {
+    "activity": 1003,
+    "num": 100,
+    "reward": [
+      {
+        "itemId": 90201,
+        "num": 15
+      },
+      {
+        "itemId": 80201,
+        "num": 15
+      }
+    ]
+  },
+  {
+    "activity": 1004,
+    "num": 100,
+    "reward": [
+      {
+        "itemId": 90201,
+        "num": 15
+      },
+      {
+        "itemId": 80201,
+        "num": 15
+      }
+    ]
   }
 ]

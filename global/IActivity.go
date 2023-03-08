@@ -13,12 +13,7 @@ const (
 	TaskPD
 )
 
-// 配置表时间类型
-const (
-	ActTime_Close      = iota // 关闭活动
-	ActTime_AlwaysOpen        // 常驻活动
-	ActTime_CheckTime         // 配置表时间
-)
+
 
 const (
 	Event_Type_PlayerOnline = iota + 1

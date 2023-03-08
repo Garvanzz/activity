@@ -64,12 +64,11 @@ func (m *Manager) Create() bool {
 		}
 	}
 
-	log.Debug("mgr:Id:%v,tickTime:%v,entity len:%v", m.AutoId, m.LastTick, len(entitys))
+	// stop 重新被加载以后检查配置吗
 
 	existIds := make(map[int32]int)
 	for id, entity := range entitys {
 		existIds[entity.CfgId] = 1
-
 		m.entitys.Store(id, entity)
 
 		// 只有运行中的活动需要加载数据
@@ -187,7 +186,7 @@ func (m *Manager) Action(action string, fromState string, toState string, args [
 			e.handler = nil
 			data.DelData(e.Id) // 活动关闭清空数据
 		}
-	case ActionStop:
+	case ActionStop: // running -> stop
 		log.Debug("actionStop:%v,%v", e.Id, e.CfgId)
 		if fromState == StateRunning {
 			e.save()
@@ -251,22 +250,19 @@ func (m *Manager) OnEvent(event *global.CEvent) {
 
 // 事件分发
 func (m *Manager) notify(obj global.IPlayer, content map[string]interface{}) {
-	key, ok := content["key"]
-	if !ok {
+	if key, ok := content["key"]; !ok {
 		return
-	}
-
-	eventKey, ok := key.(string)
-	if ok && eventKey != "" {
-
-		m.entitys.Range(func(k, v interface{}) bool {
-			entity := v.(*entity)
-
-			if entity.isActive() {
-				entity.handler.OnEvent(eventKey, obj, content)
-			}
-			return true
-		})
+	} else {
+		eventKey, ok := key.(string)
+		if ok && eventKey != "" {
+			m.entitys.Range(func(k, v interface{}) bool {
+				entity := v.(*entity)
+				if entity.isActive() {
+					entity.handler.OnEvent(eventKey, obj, content)
+				}
+				return true
+			})
+		}
 	}
 }
 
