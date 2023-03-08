@@ -204,7 +204,9 @@ func (m *Manager) Action(action string, fromState string, toState string, args [
 	case ActionRestart: // closed -> waitting
 		log.Debug("actionRestart:%v,%v", e.Id, e.CfgId)
 		// 分配新的id
+		m.entitys.Delete(e.Id)
 		e.Id = m.Id()
+		m.entitys.Store(e.Id, e)
 	default:
 		log.Error("unprocessed action:%v", action)
 	}
